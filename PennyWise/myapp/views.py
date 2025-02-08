@@ -7,7 +7,8 @@ from django.views import View
 from django.http import JsonResponse
 from django.conf import settings
 from django.urls import reverse
-
+from urllib.parse import quote_plus, urlencode
+import json
 
 # Create your views here.
 
@@ -16,19 +17,18 @@ User = get_user_model()
 oauth = OAuth()
 
 # Set up Google OAuth client
-google = oauth.register(
-    'google',
+oauth.register(
+    "auth0",
     client_id=settings.AUTH0_CLIENT_ID,
     client_secret=settings.AUTH0_CLIENT_SECRET,
-    authorize_url=f'https://{settings.AUTH0_DOMAIN}/authorize',
-    access_token_url=f'https://{settings.AUTH0_DOMAIN}/oauth/token',
-    api_base_url=f'https://{settings.AUTH0_DOMAIN}/userinfo',
     client_kwargs={
-        'scope': 'openid profile email',
+        "scope": "openid profile email",
     },
+    server_metadata_url=f"https://{settings.AUTH0_DOMAIN}/.well-known/openid-configuration",
 )
 
-class GoogleLoginView(View):
+
+class LoginView(View):
     """
     This view handles the login process for users via Google Sign-In.
     It redirects users to Okta/Auth0's authorization endpoint.
@@ -38,30 +38,51 @@ class GoogleLoginView(View):
         Redirect the user to Google login for authentication.
         """
         # Construct the redirect URL for Google login
-        redirect_uri = request.build_absolute_uri(reverse('google_callback'))
-        return google.authorize_redirect(request, redirect_uri)
+        return oauth.auth0.authorize_redirect(
+        request, request.build_absolute_uri(reverse("callback"))
+    )
 
 
-class GoogleCallbackView(View):
+class CallbackView(View):
     """
     This view handles the callback from Google Sign-In via Okta/Auth0.
     It fetches the user's information and registers/logs them in.
     """
     def get(self, request, *args, **kwargs):
-        token = google.authorize_access_token(request)
-        user_info = google.parse_id_token(token)
+        token = oauth.auth0.authorize_access_token(request)
+        request.session["user"] = token
+        return redirect(request.build_absolute_uri(reverse("index")))
 
-        user_email = user_info.get('email')
-        user_first_name = user_info.get('given_name')
-        user_last_name = user_info.get('family_name')
 
-        # Use email as the unique identifier instead of username
-        user, created = User.objects.get_or_create(
-            email=user_email,
-            defaults={'username': user_email, 'first_name': user_first_name, 'last_name': user_last_name}
+class LogoutView(View):
+    """
+    This view handles logging out the user by clearing the session and redirecting
+    to Auth0's logout endpoint.
+    """
+    def get(self, request, *args, **kwargs):
+        request.session.clear()
+        return redirect(
+            f"https://{settings.AUTH0_DOMAIN}/v2/logout?"
+            + urlencode(
+                {
+                    "returnTo": request.build_absolute_uri(reverse("index")),
+                    "client_id": settings.AUTH0_CLIENT_ID,
+                },
+                quote_via=quote_plus,
+            ),
         )
 
-        auth_login(request, user)
-        return redirect('/dashboard/')  # Change this to your actual dashboard URL
 
-
+class IndexView(View):
+    """
+    This view renders the home page and displays the user's session data if logged in.
+    """
+    def get(self, request, *args, **kwargs):
+        return render(
+            request,
+            "index.html",
+            context={
+                "session": request.session.get("user"),
+                "pretty": json.dumps(request.session.get("user"), indent=4),
+            },
+        )
