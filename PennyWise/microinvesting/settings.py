@@ -113,10 +113,10 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-AUTHENTICATION_BACKENDS = (
-    'social_core.backends.okta.OktaOAuth2',  # Add Okta OAuth2 backend
-    'django.contrib.auth.backends.ModelBackend',  # Default backend
-)
+# AUTHENTICATION_BACKENDS = (
+#     'social_core.backends.okta.OktaOAuth2',  # Add Okta OAuth2 backend
+#     'django.contrib.auth.backends.ModelBackend',  # Default backend
+# )
 
 AUTH0_DOMAIN = os.getenv('OKTA_DOMAIN')
 AUTH0_CLIENT_ID = os.getenv('OKTA_CLIENT_ID')

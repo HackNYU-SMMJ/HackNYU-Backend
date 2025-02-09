@@ -9,6 +9,9 @@ from django.conf import settings
 from django.urls import reverse
 from urllib.parse import quote_plus, urlencode
 import json
+import os
+import base64
+import hashlib
 
 # Create your views here.
 
@@ -37,9 +40,16 @@ class LoginView(View):
         """
         Redirect the user to Google login for authentication.
         """
-        # Construct the redirect URL for Google login
+        # Generate a nonce (random string) and store it in the session
+        nonce = base64.urlsafe_b64encode(os.urandom(32)).decode('utf-8')
+        request.session['nonce'] = nonce
+
+        # Construct the redirect URL for Auth0 login
         return oauth.auth0.authorize_redirect(
-        request, request.build_absolute_uri(reverse("callback"))
+            request,
+            request.build_absolute_uri(reverse("callback")),
+            nonce=nonce  # Include the nonce here
+        
     )
 
 
@@ -51,6 +61,32 @@ class CallbackView(View):
     def get(self, request, *args, **kwargs):
         token = oauth.auth0.authorize_access_token(request)
         request.session["user"] = token
+
+        # Retrieve the nonce from the session
+        nonce = request.session.get('nonce')
+
+        # # Parse the ID token and pass the nonce for verification
+        user_info = oauth.auth0.parse_id_token(token, nonce=nonce)
+
+        # Extract user data
+        user_email = user_info.get('email')
+        user_first_name = user_info.get('given_name')
+        user_last_name = user_info.get('family_name')
+
+        # Check if user exists in the database
+        user, created = User.objects.get_or_create(
+            username=user_email,
+            defaults={
+                'first_name': user_first_name,
+                'last_name': user_last_name,
+                'email': user_email,
+            }
+        )
+
+        # Log the user in
+        auth_login(request, user)
+
+        # Redirect to the index or dashboard page
         return redirect(request.build_absolute_uri(reverse("index")))
 
 
